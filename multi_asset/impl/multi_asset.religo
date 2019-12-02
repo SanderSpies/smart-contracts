@@ -45,7 +45,7 @@ let multi_asset_main =
       (
         failwith("contract is paused"): (
           list(operation),
-          multi_asset_storage,
+          multi_asset_storage
         )
       );
     } else {

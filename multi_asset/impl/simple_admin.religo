@@ -88,7 +88,7 @@ let mint_tokens_impl =
     (
       param: mint_tokens_param,
       tokens: big_map(nat, string),
-      s: balance_storage,
+      s: balance_storage
     )
     : balance_storage => {
   let owner = ensure_owner_id(param.owner, s.owners);
@@ -160,7 +160,7 @@ let simple_admin =
     (
       failwith("operation requires admin privileges"): (
         list(operation),
-        simple_admin_context,
+        simple_admin_context
       )
     );
   } else {
