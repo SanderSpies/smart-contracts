@@ -66,7 +66,7 @@ let is_operator = (param: is_operator_param, operators: operators): operation =>
     | Some(ops) => Set.mem(req.operator, ops)
     };
 
-  Operation.transaction((req, result), 0, mutez, param.is_operator_view);
+  Operation.transaction((req, result), 0mutez, param.is_operator_view);
 };
 
 let max_tokens = 4294967295n;  (* 2^32-1 *)
@@ -156,7 +156,7 @@ let balance_of = (param: balance_of_param, s: balance_storage): operation => {
   };
 
   let requests_2_bals = List.map(to_balance, param.balance_request);
-  Operation.transaction(requests_2_bals, 0, mutez, param.balance_view);
+  Operation.transaction(requests_2_bals, 0mutez, param.balance_view);
 };
 
 let transfer_balance =
@@ -189,7 +189,7 @@ let transfer_safe_check = (param: transfer_param): list(operation) => {
     data: param.data,
   };
   let op =
-    Operation.transaction(On_multi_tokens_received(p), 0, mutez, receiver);
+    Operation.transaction(On_multi_tokens_received(p), 0mutez, receiver);
   [op];
 };
 

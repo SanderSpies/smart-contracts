@@ -114,7 +114,7 @@ let mint_safe_check = (param: mint_tokens_param): list(operation) => {
     data: param.data,
   };
   let op =
-    Operation.transaction(On_multi_tokens_received(p), 0, mutez, receiver);
+    Operation.transaction(On_multi_tokens_received(p), 0mutez, receiver);
   [op];
 };
 

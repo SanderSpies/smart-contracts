@@ -19,5 +19,5 @@ type receiver =
  */
 let receiver_stub = (p: receiver, s: unit): (list(operation), unit) => (
   []: list(operation),
-  unit,
+  unit
 );
