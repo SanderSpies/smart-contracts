@@ -38,7 +38,18 @@ type simple_admin =
   | Pause(bool)
   | Create_token(create_token_param)
   | Mint_tokens(mint_tokens_param)
-  | Burn_tokens(burn_tokens_param);
+  | Burn_tokens(burn_tokens_param)
+  /*
+     Adds implicit account to the white list to be able to receive tokens
+   */
+  | Add_implicit_owners(list(key_hash))
+  /*
+     Removes implicit account from the white list. Not whitelisted implicit accounts
+     cannot receive tokens. All existing account token balances if any, will remain
+     unchanged. It is still possible to transfer tokens from not whitelisted
+     implicit account
+   */
+  | Remove_implicit_owners(list(key_hash));
 
 type simple_admin_storage = {
   admin: address,
@@ -87,43 +98,48 @@ let token_exists = (token_id: nat, tokens: big_map(nat, string)): unit => {
 let mint_tokens_impl =
     (
       param: mint_tokens_param,
+      owner_id: nat,
       tokens: big_map(nat, string),
-      s: balance_storage
+      b: balances
     )
-    : balance_storage => {
-  let owner = ensure_owner_id(param.owner, s.owners);
-
+    : balances => {
   let make_transfer = (bals: balances, t: tx) => {
     let u: unit = token_exists(t.token_id, tokens);
-    let to_key = make_balance_key_impl(owner.id, t.token_id);
+    let to_key = make_balance_key_impl(owner_id, t.token_id);
     let old_bal = get_balance(to_key, bals);
     Map.update(to_key, Some(old_bal + t.amount), bals);
   };
 
-  let new_bals = List.fold(make_transfer, param.batch, s.balances);
-  {owners: owner.owners, balances: new_bals};
+  List.fold(make_transfer, param.batch, b);
 };
 
-let mint_safe_check = (param: mint_tokens_param): list(operation) => {
-  let receiver: contract(multi_token_receiver) =
-    Operation.get_entrypoint("%multi_token_receiver", param.owner);
-  let p: on_multi_tokens_received_param = {
-    operator: sender,
-    from_: (None: option(address)),
-    batch: param.batch,
-    data: param.data,
+let mint_safe_check =
+    (param: mint_tokens_param, is_owner_implicit: bool): list(operation) =>
+  if (is_owner_implicit) {
+    ([]: list(operation));
+  } else {
+    let receiver: contract(multi_token_receiver) =
+      Operation.get_entrypoint("%multi_token_receiver", param.owner);
+    let p: on_multi_tokens_received_param = {
+      operator: sender,
+      from_: (None: option(address)),
+      batch: param.batch,
+      data: param.data,
+    };
+    let op =
+      Operation.transaction(On_multi_tokens_received(p), 0mutez, receiver);
+    [op];
   };
-  let op =
-    Operation.transaction(On_multi_tokens_received(p), 0mutez, receiver);
-  [op];
-};
 
 let mint_tokens =
     (param: mint_tokens_param, a: simple_admin_storage, b: balance_storage)
     : (list(operation), balance_storage) => {
-  let new_b = mint_tokens_impl(param, a.tokens, b);
-  let ops = mint_safe_check(param);
-  (ops, new_b);
+  let owner = ensure_owner_id(param.owner, b.owners);
+  let ops = mint_safe_check(param, owner.owner.is_implicit);
+  let new_bals =
+    mint_tokens_impl(param, owner.owner.id, a.tokens, b.balances);
+  let new_s = {owners: owner.owners, balances: new_bals};
+  (ops, new_s);
 };
 
 let burn_tokens =
@@ -151,6 +167,58 @@ let burn_tokens =
 
   let new_bals = List.fold(make_burn, param.batch, s.balances);
   {owners: s.owners, balances: new_bals};
+};
+
+let get_implicit_address = (hash: key_hash): address => {
+  let c: contract(unit) = Current.implicit_account(hash);
+  Current.address(c);
+};
+
+let add_implicit_owners =
+    (owner_hashes: list(key_hash), s: balance_storage): balance_storage => {
+  let add_owner = (l: owner_lookup, h: key_hash) => {
+    let owner = get_implicit_address(h);
+    let entry = Map.find_opt(owner, l.owners);
+    switch (entry) {
+    | None =>
+      let r = add_owner(owner, true, l);
+      r.owners;
+    | Some(o_e) =>
+      if (o_e.is_implicit) {
+        s.owners;
+      } else {
+        (
+          failwith("originated owner with the same address already exists"): owner_lookup
+        );
+      }
+    };
+  };
+
+  let new_lookup = List.fold(add_owner, owner_hashes, s.owners);
+  {owners: new_lookup, balances: s.balances};
+};
+
+let remove_implicit_owners =
+    (owner_hashes: list(key_hash), s: balance_storage): balance_storage => {
+  let remove_owner = (l: owner_lookup, h: key_hash) => {
+    let owner = get_implicit_address(h);
+    let entry = Map.find_opt(owner, l.owners);
+    switch (entry) {
+    | None => l
+    | Some(o_e) =>
+      if (!o_e.is_implicit) {
+        (failwith("trying to remove non-implicit account"): owner_lookup);
+      } else {
+        {
+          owner_count: s.owners.owner_count,
+          owners: Map.remove(owner, s.owners.owners),
+        };
+      }
+    };
+  };
+
+  let new_lookup = List.fold(remove_owner, owner_hashes, s.owners);
+  {owners: new_lookup, balances: s.balances};
 };
 
 let simple_admin =
@@ -194,12 +262,28 @@ let simple_admin =
         mint_tokens(param, ctx.admin_storage, ctx.balance_storage);
       let new_ctx: simple_admin_context = {
         admin_storage: ctx.admin_storage,
-        balance_storage: ops_new_bals[1],
+        balance_storage: ops_new_bals[1]
       };
       (ops_new_bals[0], new_ctx);
 
     | Burn_tokens(param) =>
       let new_bals = burn_tokens(param, ctx.balance_storage);
+      let new_ctx = {
+        admin_storage: ctx.admin_storage,
+        balance_storage: new_bals,
+      };
+      ([]: list(operation), new_ctx);
+
+    | Add_implicit_owners(hashes) =>
+      let new_bals = add_implicit_owners(hashes, ctx.balance_storage);
+      let new_ctx = {
+        admin_storage: ctx.admin_storage,
+        balance_storage: new_bals,
+      };
+      ([]: list(operation), new_ctx);
+
+    | Remove_implicit_owners(hashes) =>
+      let new_bals = remove_implicit_owners(hashes, ctx.balance_storage);
       let new_ctx = {
         admin_storage: ctx.admin_storage,
         balance_storage: new_bals,

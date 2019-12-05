@@ -72,13 +72,16 @@ let is_operator = (param: is_operator_param, operators: operators): operation =>
 let max_tokens = 4294967295n;  (* 2^32-1 *)
 let owner_offset = 4294967296n;  (* 2^32 *)
 
-
 /* owner_token_id -> balance */
 type balances = big_map(nat, nat);
+type owner_entry = {
+  id: nat,
+  is_implicit: bool,
+};
 type owner_lookup = {
   owner_count: nat,
-  /* owner_address -> owner_id */
-  owners: big_map(address, nat),
+  /* owner_address -> (id * is_implicit) */
+  owners: big_map(address, owner_entry),
 };
 
 type balance_storage = {
@@ -87,35 +90,39 @@ type balance_storage = {
 };
 
 type owner_result = {
-  id: nat,
+  owner: owner_entry,
   owners: owner_lookup,
 };
 
 /* return updated storage and newly added owner id */
-let add_owner = (owner: address, s: owner_lookup): owner_result => {
+
+let add_owner =
+    (owner: address, is_implicit: bool, s: owner_lookup): owner_result => {
   let owner_id = s.owner_count + 1n;
-  let os = Map.add(owner, owner_id, s.owners);
+  let entry = {id: owner_id, is_implicit};
+  let os = Map.add(owner, entry, s.owners);
   let new_s = {owner_count: owner_id, owners: os};
-  {id: owner_id, owners: new_s};
+  {owner: entry, owners: new_s};
 };
 
 /*
    gets existing owner id. If owner does not have one, creates a new id and adds
    it to an owner_lookup
  */
+
 let ensure_owner_id = (owner: address, s: owner_lookup): owner_result => {
   let owner_id = Map.find_opt(owner, s.owners);
   switch (owner_id) {
-  | Some(id) => {id, owners: s}
-  | None => add_owner(owner, s)
+  | Some(entry) => {owner: entry, owners: s}
+  | None => add_owner(owner, false, s)
   };
 };
 
 let get_owner_id = (owner: address, s: owner_lookup): nat => {
-  let owner_id = Map.find_opt(owner, s.owners);
-  switch (owner_id) {
+  let owner = Map.find_opt(owner, s.owners);
+  switch (owner) {
   | None => (failwith("No such owner"): nat)
-  | Some(id) => id
+  | Some(o) => o.id
   };
 };
 
@@ -179,28 +186,34 @@ let transfer_balance =
   };
 };
 
-let transfer_safe_check = (param: transfer_param): list(operation) => {
-  let receiver: contract(multi_token_receiver) =
-    Operation.get_entrypoint("%multi_token_receiver", param.to_);
-  let p: on_multi_tokens_received_param = {
-    operator: sender,
-    from_: Some(param.from_),
-    batch: param.batch,
-    data: param.data,
+let transfer_safe_check =
+    (param: transfer_param, to_is_implicit: bool): list(operation) =>
+  if (to_is_implicit) {
+    ([]: list(operation));
+  } else {
+    let receiver: contract(multi_token_receiver) =
+      Operation.get_entrypoint("%multi_token_receiver", param.to_);
+    let p: on_multi_tokens_received_param = {
+      operator: sender,
+      from_: Some(param.from_),
+      batch: param.batch,
+      data: param.data,
+    };
+    let op =
+      Operation.transaction(On_multi_tokens_received(p), 0mutez, receiver);
+    [op];
   };
-  let op =
-    Operation.transaction(On_multi_tokens_received(p), 0mutez, receiver);
-  [op];
-};
 
 let transfer =
     (param: transfer_param, s: balance_storage)
     : (list(operation), balance_store) => {
-  let from_id = get_owner_id(param.from_, s.owners);
   let to_o = ensure_owner_id(param.to_, s.owners);
+  let ops = transfer_safe_check(param, to_o.owner.is_implicit);
+
+  let from_id = get_owner_id(param.from_, s.owners);
   let make_transfer = (bals: balances, t: tx) => {
     let from_key = make_balance_key_impl(from_id, t.token_id);
-    let to_key = make_balance_key_impl(to_o.id, t.token_id);
+    let to_key = make_balance_key_impl(to_o.owner.id, t.token_id);
     transfer_balance(from_key, to_key, t.amount, bals);
   };
 
@@ -209,7 +222,7 @@ let transfer =
     owners: to_o.owners,
     balances: new_balances,
   };
-  let ops = transfer_safe_check(param);
+
   (ops, new_store);
 };
 

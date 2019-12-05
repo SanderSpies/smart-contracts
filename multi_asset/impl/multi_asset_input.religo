@@ -1,30 +1,30 @@
 #include "multi_asset.religo"
 
 /* let sas : simple_admin_storage = {
-     admin = ("tz1hUXU4DPHPyrEEekqhmEEJvdCpB2gP4qtp" : address);
+     admin = ("tz1YPSCGWXwBdTncK2aCctSZAXWvGsGwVJqU" : address);
      paused = true;
      tokens = (Big_map.empty : (nat, string) big_map);
    } */
 
 /* let mts : multi_token_storage = {
-     approvals = (Big_map.empty : (address, address set) big_map);
+     operators = (Big_map.empty : (address, address set) big_map);
      balance_storage = {
        owners = {
          owner_count = 0n;
          owners = (Big_map.empty : (address, nat) big_map);
        };
-   Admin    balances = (Big_map.empty : (nat, nat) big_map);
+       balances = (Big_map.empty : (nat, nat) big_map);
      }
    } */
 
 let storage: multi_asset_storage = {
   admin: {
-    admin: ("tz1hUXU4DPHPyrEEekqhmEEJvdCpB2gP4qtp": address),
+    admin: ("tz1YPSCGWXwBdTncK2aCctSZAXWvGsGwVJqU": address),
     paused: true,
     tokens: (Big_map.empty: big_map(nat, string)),
   },
   assets: {
-    approvals: (Big_map.empty: big_map(address, set(address))),
+    operators: (Big_map.empty: big_map(address, set(address))),
     balance_storage: {
       owners: {
         owner_count: 0n,
@@ -36,8 +36,8 @@ let storage: multi_asset_storage = {
 };
 
 /*
-   (Pair (Pair (Pair "tz1hUXU4DPHPyrEEekqhmEEJvdCpB2gP4qtp" True) {})
-         (Pair {} (Pair {} (Pair 0 {}))))
+   (Pair (Pair (Pair "tz1YPSCGWXwBdTncK2aCctSZAXWvGsGwVJqU" True) {})
+       (Pair (Pair {} (Pair 0 {})) {}))
  */
 
 let param_pause: multi_asset_param = Admin(Pause(true));
@@ -59,7 +59,7 @@ let param_mint_tokens: multi_asset_param =
       owner: ("tz1aYQcaXmowUu59gAgMGdiX6ARR7gdmikZk": address),
       batch: ([{token_id: 1n, amount: 10n}]: list(tx)),
       data: ("": bytes),
-    }),
+    })
   );
 
 /*
@@ -71,7 +71,7 @@ let param_burn_tokens: multi_asset_param =
     Burn_tokens({
       owner: ("tz1RZUEpGCVgDR9Q1GZD8bsp4WyWpNhu1MRY": address),
       batch: ([{token_id: 1n, amount: 5n}]: list(tx)),
-    }),
+    })
   );
 
 /*
@@ -85,7 +85,7 @@ let param_transfer: multi_asset_param =
       to_: ("tz1RZUEpGCVgDR9Q1GZD8bsp4WyWpNhu1MRY": address),
       batch: ([{token_id: 1n, amount: 8n}]: list(tx)),
       data: ("": bytes),
-    }),
+    })
   );
 
 /*
